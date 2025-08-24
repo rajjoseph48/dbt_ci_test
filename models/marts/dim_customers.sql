@@ -11,7 +11,7 @@ select
     coalesce(avg(case when is_completed = 1 then total_amount end), 0) as avg_order_value,
     min(order_date) as first_order_date,
     max(order_date) as last_order_date,
-    current_timestamp as updated_at
+    current_timestamp as updated_att
 from {{ ref('int_customer_orders') }}
 group by 
     customer_id,
