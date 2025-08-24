@@ -14,11 +14,6 @@ on:
 
 env:
   DBT_PROFILES_DIR: ${{ github.workspace }}
-  DBT_HOST: ${{ secrets.DBT_HOST }}
-  DBT_USER: ${{ secrets.DBT_USER }}
-  DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}
-  DBT_DATABASE: ${{ secrets.DBT_DATABASE }}
-  DBT_PORT: ${{ secrets.DBT_PORT }}
 
 jobs:
   lint:
