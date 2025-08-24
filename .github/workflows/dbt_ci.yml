@@ -15,6 +15,11 @@ on:
 env:
   DBT_PROFILES_DIR: ${{ github.workspace }}
 
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
 jobs:
   dbt_test:
     runs-on: ubuntu-latest
@@ -86,6 +91,7 @@ jobs:
           name: dbt-artifacts-dev
           path: ./state/
           if_no_artifact_found: ignore
+        continue-on-error: true
           
       - name: Load seed data
         run: dbt seed --target ${{ matrix.dbt-target }}
