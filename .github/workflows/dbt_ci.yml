@@ -1,0 +1,221 @@
+name: dbt CI Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'models/**'
+      - 'tests/**'
+      - 'macros/**'
+      - 'dbt_project.yml'
+      - 'packages.yml'
+  push:
+    branches: [main]
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+  DBT_HOST: ${{ secrets.DBT_HOST }}
+  DBT_USER: ${{ secrets.DBT_USER }}
+  DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}
+  DBT_DATABASE: ${{ secrets.DBT_DATABASE }}
+  DBT_PORT: ${{ secrets.DBT_PORT }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: SQL Lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Install dbt packages
+        run: dbt deps
+        
+      - name: Lint SQL files
+        run: |
+          sqlfluff lint models/ --dialect postgres --templater dbt
+          
+  dbt_test:
+    runs-on: ubuntu-latest
+    name: dbt Test & Build
+    needs: lint
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ecommerce
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    strategy:
+      matrix:
+        dbt-target: [dev]
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Setup dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cp profiles.yml ~/.dbt/profiles.yml
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Install dbt packages
+        run: dbt deps
+        
+      - name: Debug dbt connection
+        run: dbt debug --target ${{ matrix.dbt-target }}
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Load seed data
+        run: dbt seed --target ${{ matrix.dbt-target }}
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Run dbt models (changed files only)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Run only modified models and their downstream dependencies
+          dbt run --target ${{ matrix.dbt-target }} --select state:modified+
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Run all dbt models (main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: dbt run --target ${{ matrix.dbt-target }}
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Run dbt tests
+        run: dbt test --target ${{ matrix.dbt-target }}
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Generate dbt docs
+        run: dbt docs generate --target ${{ matrix.dbt-target }}
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Upload dbt artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: dbt-artifacts-${{ matrix.dbt-target }}
+          path: |
+            target/
+            logs/
+            
+  comment_pr:
+    runs-on: ubuntu-latest
+    name: Comment on PR
+    needs: [lint, dbt_test]
+    if: github.event_name == 'pull_request' && always()
+    steps:
+      - name: Comment PR Success
+        if: needs.dbt_test.result == 'success' && needs.lint.result == 'success'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ **dbt CI Pipeline Passed**\n\n- SQL linting: ✅ Passed\n- dbt tests: ✅ All tests passed\n- dbt build: ✅ Models built successfully\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n\nThis PR is ready for review! 🚀'
+            })
+            
+      - name: Comment PR Failure
+        if: needs.dbt_test.result == 'failure' || needs.lint.result == 'failure'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const lintStatus = '${{ needs.lint.result }}' === 'success' ? '✅ Passed' : '❌ Failed';
+            const testStatus = '${{ needs.dbt_test.result }}' === 'success' ? '✅ Passed' : '❌ Failed';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `❌ **dbt CI Pipeline Failed**\n\n- SQL linting: ${lintStatus}\n- dbt tests: ${testStatus}\n\nPlease check the workflow logs and fix the issues before merging. 🔧`
+            })
+            
+  cleanup:
+    runs-on: ubuntu-latest
+    name: Cleanup PR Schema
+    needs: [dbt_test]
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ecommerce
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Cleanup PR Schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d ecommerce -c "DROP SCHEMA IF EXISTS pr_${{ github.event.pull_request.number }}_analytics CASCADE;"
+        continue-on-error: true

@@ -1,0 +1,12 @@
+# Global code owners - all files require review from data team
+* @data-team
+
+# dbt models require additional review from analytics team
+models/ @data-team @analytics-team
+
+# CI/CD changes require DevOps review
+.github/ @data-team @devops-team
+
+# Production deployment files need senior review
+dbt_project.yml @senior-data-engineers
+profiles.yml @senior-data-engineers

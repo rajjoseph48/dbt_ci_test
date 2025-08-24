@@ -1,0 +1,113 @@
+name: dbt Production Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'models/**'
+      - 'tests/**'
+      - 'macros/**'
+      - 'dbt_project.yml'
+      - 'packages.yml'
+  workflow_dispatch:
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+
+jobs:
+  deploy_production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Setup dbt profile for production
+        run: |
+          mkdir -p ~/.dbt
+          cp profiles.yml ~/.dbt/profiles.yml
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Install dbt packages
+        run: dbt deps
+        
+      - name: Debug dbt connection
+        run: dbt debug --target prod
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Load seed data
+        run: dbt seed --target prod
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Run dbt models
+        run: dbt run --target prod
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Run dbt tests
+        run: dbt test --target prod
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Generate and publish docs
+        run: |
+          dbt docs generate --target prod
+          # You can add steps here to publish docs to S3, GCS, or other hosting
+        env:
+          DBT_HOST: ${{ secrets.PROD_DBT_HOST }}
+          DBT_USER: ${{ secrets.PROD_DBT_USER }}
+          DBT_PASSWORD: ${{ secrets.PROD_DBT_PASSWORD }}
+          DBT_DATABASE: ${{ secrets.PROD_DBT_DATABASE }}
+          DBT_SCHEMA: ${{ secrets.PROD_DBT_SCHEMA }}
+          
+      - name: Notify deployment success
+        uses: actions/github-script@v6
+        if: success()
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha;
+            console.log(`✅ Production deployment successful for commit ${sha}`);
+            
+      - name: Notify deployment failure
+        uses: actions/github-script@v6
+        if: failure()
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha;
+            console.log(`❌ Production deployment failed for commit ${sha}`);
