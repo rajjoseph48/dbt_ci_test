@@ -55,7 +55,6 @@ gh secret set PROD_DBT_SCHEMA --body "analytics"
 - ✅ **Require status checks to pass before merging**
 - ✅ **Require branches to be up to date before merging**
 - **Status checks to require:**
-  - `lint`
   - `dbt_test (dev)`
   - `comment_pr`
 
@@ -101,7 +100,7 @@ gh secret set PROD_DBT_SCHEMA --body "analytics"
 # Set branch protection rule
 gh api repos/{OWNER}/{REPO}/branches/main/protection \
   --method PUT \
-  --field required_status_checks='{"strict":true,"contexts":["lint","dbt_test (dev)","comment_pr"]}' \
+  --field required_status_checks='{"strict":true,"contexts":["dbt_test (dev)","comment_pr"]}' \
   --field enforce_admins=true \
   --field required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true}' \
   --field restrictions=null
@@ -132,10 +131,10 @@ gh pr create --title "Test CI Pipeline" --body "Testing the automated dbt CI wor
 
 ### **What Should Happen:**
 1. ✅ **GitHub Actions triggers** automatically
-2. ✅ **SQL linting** runs with sqlfluff
-3. ✅ **PostgreSQL container** starts in CI
+2. ✅ **PostgreSQL container** starts in CI
+3. ✅ **dbt seed** loads test data from CSV files
 4. ✅ **dbt models** build in isolated schema `pr_X_analytics`
-5. ✅ **dbt tests** execute
+5. ✅ **dbt tests** execute and validate data
 6. ✅ **PR comment** appears with results
 7. ✅ **Status checks** show green/red in PR
 

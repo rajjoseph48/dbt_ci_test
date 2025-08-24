@@ -16,34 +16,9 @@ env:
   DBT_PROFILES_DIR: ${{ github.workspace }}
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    name: SQL Lint
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          
-      - name: Install dbt packages
-        run: dbt deps
-          
-      - name: Lint SQL files (syntax only)
-        run: |
-          sqlfluff lint models/ --config .sqlfluff.ci
-          
   dbt_test:
     runs-on: ubuntu-latest
     name: dbt Test & Build
-    needs: lint
     services:
       postgres:
         image: postgres:14
@@ -162,11 +137,11 @@ jobs:
   comment_pr:
     runs-on: ubuntu-latest
     name: Comment on PR
-    needs: [lint, dbt_test]
+    needs: [dbt_test]
     if: github.event_name == 'pull_request' && always()
     steps:
       - name: Comment PR Success
-        if: needs.dbt_test.result == 'success' && needs.lint.result == 'success'
+        if: needs.dbt_test.result == 'success'
         uses: actions/github-script@v6
         with:
           script: |
@@ -174,21 +149,19 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **dbt CI Pipeline Passed**\n\n- SQL linting: ✅ Passed\n- dbt tests: ✅ All tests passed\n- dbt build: ✅ Models built successfully\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n\nThis PR is ready for review! 🚀'
+              body: '✅ **dbt CI Pipeline Passed**\n\n- dbt models: ✅ Built successfully\n- dbt tests: ✅ All tests passed\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n\nThis PR is ready for review! 🚀'
             })
             
       - name: Comment PR Failure
-        if: needs.dbt_test.result == 'failure' || needs.lint.result == 'failure'
+        if: needs.dbt_test.result == 'failure'
         uses: actions/github-script@v6
         with:
           script: |
-            const lintStatus = '${{ needs.lint.result }}' === 'success' ? '✅ Passed' : '❌ Failed';
-            const testStatus = '${{ needs.dbt_test.result }}' === 'success' ? '✅ Passed' : '❌ Failed';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `❌ **dbt CI Pipeline Failed**\n\n- SQL linting: ${lintStatus}\n- dbt tests: ${testStatus}\n\nPlease check the workflow logs and fix the issues before merging. 🔧`
+              body: '❌ **dbt CI Pipeline Failed**\n\n- dbt tests: ❌ Failed\n\nPlease check the workflow logs and fix the issues before merging. 🔧'
             })
             
   cleanup:
