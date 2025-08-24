@@ -121,7 +121,7 @@ jobs:
             fi
             
             echo "🧪 Testing dbt ls with state first:"
-            dbt ls --select state:modified+ --state ./state/target/ > dbt_ls_output.log 2>&1
+            dbt ls --select +state:modified+ --state ./state/target/ > dbt_ls_output.log 2>&1
             ls_exit_code=$?
             echo "dbt ls exit code: $ls_exit_code"
             echo "dbt ls output:"
@@ -129,10 +129,15 @@ jobs:
             
             if [ $ls_exit_code -eq 0 ]; then
               echo "✅ State comparison works, running dbt run..."
-              echo "🚀 Executing: dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --state ./state/target/"
-              dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --state ./state/target/ 2>&1 | tee dbt_run_output.log
-              run_exit_code=${PIPESTATUS[0]}
-              echo "dbt run exit code: $run_exit_code"
+              echo "🚀 Executing: dbt run --target ${{ matrix.dbt-target }} --select +state:modified+ --state ./state/target/"
+              
+              # Run dbt with explicit output flushing and timeout
+              timeout 300 dbt run --target ${{ matrix.dbt-target }} --select +state:modified+ --state ./state/target/ 2>&1 | tee dbt_run_output.log
+              run_exit_code=$?
+              
+              echo "🔍 dbt run exit code: $run_exit_code"
+              echo "📊 Final dbt run log content:"
+              cat dbt_run_output.log | tail -20
             else
               echo "❌ State comparison failed in dbt ls, showing error details:"
               cat dbt_ls_output.log
