@@ -14,8 +14,8 @@ select
         else 'unknown'
     end as order_category,
     extract(year from order_date) as order_year,
-    extract(month from order_date) as order_month,
     extract(quarter from order_date) as order_quarter,
+    extract(month from order_date) as order_month,
     current_timestamp as updated_at
 from {{ ref('int_customer_orders') }}
 where order_id is not null

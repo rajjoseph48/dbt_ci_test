@@ -107,11 +107,47 @@ jobs:
         run: |
           if [ -d "./state/target" ]; then
             echo "📊 Running modified models and downstream dependencies..."
-            dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/
+            dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/ > dbt_run_output.log 2>&1
           else
             echo "⚠️ No previous state found, running all models..."
-            dbt run --target ${{ matrix.dbt-target }}
+            dbt run --target ${{ matrix.dbt-target }} > dbt_run_output.log 2>&1
           fi
+          
+          # Display output and capture for PR comment
+          cat dbt_run_output.log
+          
+          # Save key information for PR comment
+          echo "## dbt Run Results" > dbt_run_summary.md
+          echo "" >> dbt_run_summary.md
+          
+          # Extract model run results
+          if grep -q "Completed successfully" dbt_run_output.log; then
+            MODELS_RUN=$(grep -c "OK created" dbt_run_output.log || echo "0")
+            echo "✅ **Models Built**: $MODELS_RUN" >> dbt_run_summary.md
+            
+            # List specific models that were built
+            echo "" >> dbt_run_summary.md
+            echo "**Models Created:**" >> dbt_run_summary.md
+            grep "OK created" dbt_run_output.log | sed 's/.*OK created /- /' >> dbt_run_summary.md || echo "- (No models listed)" >> dbt_run_summary.md
+          else
+            echo "❌ **dbt run failed**" >> dbt_run_summary.md
+          fi
+          
+          # Extract timing information
+          if grep -q "Completed in" dbt_run_output.log; then
+            TIMING=$(grep "Completed in" dbt_run_output.log | tail -1)
+            echo "" >> dbt_run_summary.md
+            echo "⏱️ **$TIMING**" >> dbt_run_summary.md
+          fi
+          
+          echo "" >> dbt_run_summary.md
+          echo "<details>" >> dbt_run_summary.md
+          echo "<summary>📋 View Full dbt Run Log</summary>" >> dbt_run_summary.md
+          echo "" >> dbt_run_summary.md
+          echo '```' >> dbt_run_summary.md
+          cat dbt_run_output.log >> dbt_run_summary.md
+          echo '```' >> dbt_run_summary.md
+          echo "</details>" >> dbt_run_summary.md
         env:
           DBT_HOST: localhost
           DBT_USER: postgres
@@ -134,11 +170,51 @@ jobs:
         run: |
           if [ -d "./state/target" ]; then
             echo "🧪 Testing modified models and downstream dependencies..."
-            dbt test --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/
+            dbt test --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/ > dbt_test_output.log 2>&1
           else
             echo "⚠️ No previous state found, running all tests..."
-            dbt test --target ${{ matrix.dbt-target }}
+            dbt test --target ${{ matrix.dbt-target }} > dbt_test_output.log 2>&1
           fi
+          
+          # Display output and capture for PR comment
+          cat dbt_test_output.log
+          
+          # Save test information for PR comment
+          echo "" >> dbt_run_summary.md
+          echo "## dbt Test Results" >> dbt_run_summary.md
+          echo "" >> dbt_run_summary.md
+          
+          # Extract test results
+          if grep -q "Completed successfully" dbt_test_output.log; then
+            TESTS_RUN=$(grep -c "PASS" dbt_test_output.log || echo "0")
+            TESTS_FAILED=$(grep -c "FAIL" dbt_test_output.log || echo "0")
+            echo "✅ **Tests Passed**: $TESTS_RUN" >> dbt_run_summary.md
+            if [ "$TESTS_FAILED" -gt 0 ]; then
+              echo "❌ **Tests Failed**: $TESTS_FAILED" >> dbt_run_summary.md
+            fi
+            
+            # List specific tests that ran
+            echo "" >> dbt_run_summary.md
+            echo "**Tests Executed:**" >> dbt_run_summary.md
+            grep -E "(PASS|FAIL)" dbt_test_output.log | sed 's/.*\(PASS\|FAIL\) /- /' >> dbt_run_summary.md || echo "- (No tests listed)" >> dbt_run_summary.md
+          else
+            echo "❌ **dbt test failed**" >> dbt_run_summary.md
+          fi
+          
+          # Extract test timing
+          if grep -q "Completed in" dbt_test_output.log; then
+            TEST_TIMING=$(grep "Completed in" dbt_test_output.log | tail -1)
+            echo "⏱️ **$TEST_TIMING**" >> dbt_run_summary.md
+          fi
+          
+          echo "" >> dbt_run_summary.md
+          echo "<details>" >> dbt_run_summary.md
+          echo "<summary>🧪 View Full dbt Test Log</summary>" >> dbt_run_summary.md
+          echo "" >> dbt_run_summary.md
+          echo '```' >> dbt_run_summary.md
+          cat dbt_test_output.log >> dbt_run_summary.md
+          echo '```' >> dbt_run_summary.md
+          echo "</details>" >> dbt_run_summary.md
         env:
           DBT_HOST: localhost
           DBT_USER: postgres
@@ -173,6 +249,9 @@ jobs:
           path: |
             target/
             logs/
+            dbt_run_summary.md
+            dbt_run_output.log
+            dbt_test_output.log
             
   comment_pr:
     runs-on: ubuntu-latest
@@ -180,16 +259,40 @@ jobs:
     needs: [dbt_test]
     if: github.event_name == 'pull_request' && always()
     steps:
+      - name: Download dbt artifacts
+        if: needs.dbt_test.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: dbt-artifacts-dev
+          path: ./artifacts/
+        continue-on-error: true
+        
       - name: Comment PR Success
         if: needs.dbt_test.result == 'success'
         uses: actions/github-script@v6
         with:
           script: |
+            const fs = require('fs');
+            let summaryContent = '✅ **dbt CI Pipeline Passed**\n\n';
+            
+            try {
+              // Try to read the detailed summary
+              const detailedSummary = fs.readFileSync('./artifacts/dbt_run_summary.md', 'utf8');
+              summaryContent += detailedSummary;
+            } catch (error) {
+              // Fallback to basic summary
+              summaryContent += '- dbt models: ✅ Built successfully (state-aware)\n- dbt tests: ✅ All tests passed\n';
+            }
+            
+            summaryContent += '\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n';
+            summaryContent += '**Strategy**: Only modified models + downstream dependencies\n\n';
+            summaryContent += 'This PR is ready for review! 🚀';
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **dbt CI Pipeline Passed**\n\n- dbt models: ✅ Built successfully (state-aware)\n- dbt tests: ✅ All tests passed\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n**Strategy**: Only modified models + downstream dependencies\n\nThis PR is ready for review! 🚀'
+              body: summaryContent
             })
             
       - name: Comment PR Failure
