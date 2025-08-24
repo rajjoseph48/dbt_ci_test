@@ -14,6 +14,7 @@ indent_unit = space
 project_dir = .
 profiles_dir = .
 profile = ecommerce_analytics
+target = dev
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = lower

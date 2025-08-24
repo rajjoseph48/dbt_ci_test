@@ -6,7 +6,7 @@ ecommerce_analytics:
       host: "{{ env_var('DBT_HOST', 'localhost') }}"
       user: "{{ env_var('DBT_USER', 'postgres') }}"
       password: "{{ env_var('DBT_PASSWORD', 'datascience@01') }}"
-      port: "{{ env_var('DBT_PORT', 5432) | as_number }}"
+      port: "{{ (env_var('DBT_PORT', '5432') or '5432') | as_number }}"
       dbname: "{{ env_var('DBT_DATABASE', 'ecommerce') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'analytics') }}{{ var('schema_suffix', '') }}"
       threads: 4
@@ -17,7 +17,7 @@ ecommerce_analytics:
       host: "{{ env_var('DBT_HOST', 'localhost') }}"
       user: "{{ env_var('DBT_USER', 'postgres') }}"
       password: "{{ env_var('DBT_PASSWORD', 'postgres') }}"
-      port: "{{ env_var('DBT_PORT', 5432) | as_number }}"
+      port: "{{ (env_var('DBT_PORT', '5432') or '5432') | as_number }}"
       dbname: "{{ env_var('DBT_DATABASE', 'ecommerce') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'analytics_staging') }}{{ var('schema_suffix', '') }}"
       threads: 4
@@ -28,7 +28,7 @@ ecommerce_analytics:
       host: "{{ env_var('DBT_HOST') }}"
       user: "{{ env_var('DBT_USER') }}"
       password: "{{ env_var('DBT_PASSWORD') }}"
-      port: "{{ env_var('DBT_PORT', 5432) | as_number }}"
+      port: "{{ (env_var('DBT_PORT', '5432') or '5432') | as_number }}"
       dbname: "{{ env_var('DBT_DATABASE') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'analytics') }}"
       threads: 8
