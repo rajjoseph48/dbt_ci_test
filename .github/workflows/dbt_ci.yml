@@ -76,6 +76,17 @@ jobs:
           DBT_DATABASE: ecommerce
           DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
           
+      - name: Download main branch artifacts (for state comparison)
+        if: github.event_name == 'pull_request'
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: dbt_ci.yml
+          branch: main
+          name: dbt-artifacts-dev
+          path: ./state/
+          if_no_artifact_found: ignore
+          
       - name: Load seed data
         run: dbt seed --target ${{ matrix.dbt-target }}
         env:
@@ -85,11 +96,16 @@ jobs:
           DBT_DATABASE: ecommerce
           DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
           
-      - name: Run dbt models (changed files only)
+      - name: Run dbt models (state-aware for PRs)
         if: github.event_name == 'pull_request'
         run: |
-          # Run only modified models and their downstream dependencies
-          dbt run --target ${{ matrix.dbt-target }} --select state:modified+
+          if [ -d "./state/target" ]; then
+            echo "📊 Running modified models and downstream dependencies..."
+            dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/
+          else
+            echo "⚠️ No previous state found, running all models..."
+            dbt run --target ${{ matrix.dbt-target }}
+          fi
         env:
           DBT_HOST: localhost
           DBT_USER: postgres
@@ -107,7 +123,25 @@ jobs:
           DBT_DATABASE: ecommerce
           DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
           
-      - name: Run dbt tests
+      - name: Run dbt tests (state-aware for PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -d "./state/target" ]; then
+            echo "🧪 Testing modified models and downstream dependencies..."
+            dbt test --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/
+          else
+            echo "⚠️ No previous state found, running all tests..."
+            dbt test --target ${{ matrix.dbt-target }}
+          fi
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Run all dbt tests (main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: dbt test --target ${{ matrix.dbt-target }}
         env:
           DBT_HOST: localhost
@@ -149,7 +183,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **dbt CI Pipeline Passed**\n\n- dbt models: ✅ Built successfully\n- dbt tests: ✅ All tests passed\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n\nThis PR is ready for review! 🚀'
+              body: '✅ **dbt CI Pipeline Passed**\n\n- dbt models: ✅ Built successfully (state-aware)\n- dbt tests: ✅ All tests passed\n\n**Schema**: `pr_${{ github.event.pull_request.number }}_analytics`\n**Strategy**: Only modified models + downstream dependencies\n\nThis PR is ready for review! 🚀'
             })
             
       - name: Comment PR Failure
