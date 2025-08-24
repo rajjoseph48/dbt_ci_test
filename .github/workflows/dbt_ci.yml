@@ -129,8 +129,10 @@ jobs:
             
             if [ $ls_exit_code -eq 0 ]; then
               echo "✅ State comparison works, running dbt run..."
-              dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/ > dbt_run_output.log 2>&1
-              run_exit_code=$?
+              echo "🚀 Executing: dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/"
+              dbt run --target ${{ matrix.dbt-target }} --select state:modified+ --defer --state ./state/target/ 2>&1 | tee dbt_run_output.log
+              run_exit_code=${PIPESTATUS[0]}
+              echo "dbt run exit code: $run_exit_code"
             else
               echo "❌ State comparison failed in dbt ls, showing error details:"
               cat dbt_ls_output.log
