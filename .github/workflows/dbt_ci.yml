@@ -123,7 +123,7 @@ jobs:
             if [ -s dbt_modified_seeds.log ] || [ "$needs_seeds" = true ]; then
               if [ -s dbt_modified_seeds.log ]; then
                 echo "📦 Loading modified seeds:"
-                cat dbt_modified_seeds.log
+                # cat dbt_modified_seeds.log
               fi
               if [ "$needs_seeds" = true ]; then
                 echo "📦 Loading seeds needed by modified models"
@@ -177,18 +177,18 @@ jobs:
             dbt ls --select +state:modified+ --state ./state/target/ 2>&1 | tee dbt_ls_output.log
             ls_exit_code=$?
             echo "dbt ls exit code: $ls_exit_code"
-            echo "dbt ls output:"
-            cat dbt_ls_output.log
+            # echo "dbt ls output:"
+            # cat dbt_ls_output.log
             
             echo "🔍 Debugging: What models are detected as modified?"
             dbt ls --select state:modified --state ./state/target/ 2>&1 | tee dbt_modified_only.log
-            echo "Modified models only:"
-            cat dbt_modified_only.log || echo "No modified models detected"
+            # echo "Modified models only:"
+            # cat dbt_modified_only.log || echo "No modified models detected"
             
             echo "🔍 Checking all available models:"
             dbt ls --resource-type model 2>&1 | tee dbt_all_models.log
-            echo "All models in project:"
-            cat dbt_all_models.log
+            # echo "All models in project:"
+            # cat dbt_all_models.log
             
             if [ $ls_exit_code -eq 0 ]; then
               echo "✅ State comparison works, running dbt run..."
@@ -291,8 +291,8 @@ jobs:
             dbt ls --select +state:modified+ --state ./state/target/ --resource-type test 2>&1 | tee dbt_test_ls_output.log
             test_ls_exit_code=$?
             echo "dbt ls for tests exit code: $test_ls_exit_code"
-            echo "Tests that will be executed:"
-            cat dbt_test_ls_output.log
+            # echo "Tests that will be executed:"
+            # cat dbt_test_ls_output.log
             
             if [ $test_ls_exit_code -eq 0 ]; then
               echo "✅ State comparison works for tests, running selective tests..."
@@ -389,7 +389,7 @@ jobs:
           fi
           
           echo "📋 Found models:"
-          cat all_models.txt
+          # cat all_models.txt
           
           # Check each model has tests
           echo "📋 Checking tests coverage:"

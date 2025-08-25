@@ -30,16 +30,19 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['pending', 'completed', 'cancelled']
+              arguments:
+                values: ['pending', 'completed', 'cancelled']
       - name: total_amount
         description: "Total monetary value of the order"
         tests:
           - not_null
           - dbt_utils.accepted_range:
-              min_value: 0
+              arguments:
+                min_value: 0
       - name: is_completed
         description: "Binary flag indicating if order is completed"
         tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
