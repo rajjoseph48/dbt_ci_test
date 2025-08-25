@@ -13,5 +13,5 @@ select
         else 0 
     end as is_active,
     cast(created_date as date) as created_date,
-    current_timestamp as loaded_at
+    current_timestamp as created_at
 from {{ ref('raw_locations') }}
