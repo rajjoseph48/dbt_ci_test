@@ -85,57 +85,91 @@ jobs:
         run: |
           echo "🔍 Checking that all models have tests and documentation..."
           
-          # Get all models
-          dbt ls --resource-type model > all_models.txt
+          # Get all models and handle empty results
+          dbt ls --resource-type model > all_models.txt 2>&1 || {
+            echo "❌ Failed to list models"
+            cat all_models.txt
+            exit 1
+          }
+          
+          if [ ! -s all_models.txt ]; then
+            echo "⚠️ No models found to validate"
+            exit 0
+          fi
+          
+          echo "📋 Found models:"
+          cat all_models.txt
           
           # Check each model has tests
           echo "📋 Checking tests coverage:"
           models_without_tests=""
-          while read -r model; do
-            test_count=$(dbt ls --resource-type test --select $model 2>/dev/null | wc -l || echo "0")
-            if [ "$test_count" -eq 0 ]; then
-              models_without_tests="$models_without_tests $model"
-              echo "❌ $model: No tests found"
-            else
-              echo "✅ $model: $test_count tests"
+          while IFS= read -r model; do
+            if [ -n "$model" ]; then
+              test_count=$(dbt ls --resource-type test --select "$model" 2>/dev/null | wc -l || echo "0")
+              if [ "$test_count" -eq 0 ]; then
+                models_without_tests="$models_without_tests $model"
+                echo "❌ $model: No tests found"
+              else
+                echo "✅ $model: $test_count tests"
+              fi
             fi
           done < all_models.txt
           
-          # Check documentation exists
-          echo "📚 Checking documentation coverage:"
-          models_without_docs=""
-          if ! dbt docs generate --target ${{ matrix.dbt-target }} > /dev/null 2>&1; then
+          # Generate docs first to create manifest
+          echo "📚 Generating documentation..."
+          if ! dbt docs generate --target ${{ matrix.dbt-target }}; then
             echo "❌ Failed to generate documentation"
             exit 1
           fi
           
-          # Parse manifest.json to check for model descriptions
+          # Check for manifest file
+          if [ ! -f "target/manifest.json" ]; then
+            echo "❌ manifest.json not found after docs generation"
+            exit 1
+          fi
+          
+          # Check documentation coverage with better error handling
+          echo "📚 Checking documentation coverage:"
           python3 -c "
           import json
           import sys
+          import os
           
-          with open('target/manifest.json', 'r') as f:
-              manifest = json.load(f)
+          try:
+              with open('target/manifest.json', 'r') as f:
+                  manifest = json.load(f)
+          except Exception as e:
+              print(f'❌ Error reading manifest.json: {e}')
+              sys.exit(1)
           
           models_without_docs = []
-          for node_id, node in manifest['nodes'].items():
-              if node['resource_type'] == 'model':
-                  model_name = node['name']
+          models_checked = 0
+          
+          for node_id, node in manifest.get('nodes', {}).items():
+              if node.get('resource_type') == 'model':
+                  model_name = node.get('name', '')
                   description = node.get('description', '').strip()
+                  models_checked += 1
+                  
                   if not description:
                       models_without_docs.append(model_name)
                       print(f'❌ {model_name}: No description')
                   else:
                       print(f'✅ {model_name}: Has description')
           
+          print(f'Total models checked: {models_checked}')
+          
           if models_without_docs:
               print(f'Models without documentation: {models_without_docs}')
               sys.exit(1)
-          "
+          " || {
+            echo "❌ Python validation failed"
+            exit 1
+          }
           
-          # Fail if any models lack tests or docs
+          # Fail if any models lack tests
           if [ -n "$models_without_tests" ]; then
-            echo "💥 ERROR: The following models are missing tests: $models_without_tests"
+            echo "💥 ERROR: The following models are missing tests:$models_without_tests"
             echo "Please add tests to ensure data quality!"
             exit 1
           fi
