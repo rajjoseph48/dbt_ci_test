@@ -81,6 +81,73 @@ jobs:
           DBT_DATABASE: ecommerce
           DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
           
+      - name: Validate model documentation and tests
+        run: |
+          echo "🔍 Checking that all models have tests and documentation..."
+          
+          # Get all models
+          dbt ls --resource-type model > all_models.txt
+          
+          # Check each model has tests
+          echo "📋 Checking tests coverage:"
+          models_without_tests=""
+          while read -r model; do
+            test_count=$(dbt ls --resource-type test --select $model 2>/dev/null | wc -l || echo "0")
+            if [ "$test_count" -eq 0 ]; then
+              models_without_tests="$models_without_tests $model"
+              echo "❌ $model: No tests found"
+            else
+              echo "✅ $model: $test_count tests"
+            fi
+          done < all_models.txt
+          
+          # Check documentation exists
+          echo "📚 Checking documentation coverage:"
+          models_without_docs=""
+          if ! dbt docs generate --target ${{ matrix.dbt-target }} > /dev/null 2>&1; then
+            echo "❌ Failed to generate documentation"
+            exit 1
+          fi
+          
+          # Parse manifest.json to check for model descriptions
+          python3 -c "
+          import json
+          import sys
+          
+          with open('target/manifest.json', 'r') as f:
+              manifest = json.load(f)
+          
+          models_without_docs = []
+          for node_id, node in manifest['nodes'].items():
+              if node['resource_type'] == 'model':
+                  model_name = node['name']
+                  description = node.get('description', '').strip()
+                  if not description:
+                      models_without_docs.append(model_name)
+                      print(f'❌ {model_name}: No description')
+                  else:
+                      print(f'✅ {model_name}: Has description')
+          
+          if models_without_docs:
+              print(f'Models without documentation: {models_without_docs}')
+              sys.exit(1)
+          "
+          
+          # Fail if any models lack tests or docs
+          if [ -n "$models_without_tests" ]; then
+            echo "💥 ERROR: The following models are missing tests: $models_without_tests"
+            echo "Please add tests to ensure data quality!"
+            exit 1
+          fi
+          
+          echo "🎉 All models have proper tests and documentation!"
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
       - name: Download main branch artifacts (for state comparison)
         if: github.event_name == 'pull_request'
         uses: dawidd6/action-download-artifact@v6
@@ -93,7 +160,33 @@ jobs:
           if_no_artifact_found: ignore
         continue-on-error: true
           
-      - name: Load seed data
+      - name: Load seed data (state-aware for PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -d "./state/target" ]; then
+            echo "🌱 Checking for new or modified seed files..."
+            dbt ls --select state:modified --state ./state/target/ --resource-type seed > dbt_modified_seeds.log 2>&1
+            
+            if [ -s dbt_modified_seeds.log ]; then
+              echo "📦 Found modified seeds, loading selectively:"
+              cat dbt_modified_seeds.log
+              dbt seed --target ${{ matrix.dbt-target }} --select state:modified --state ./state/target/
+            else
+              echo "✅ No seed changes detected, using existing seed data"
+            fi
+          else
+            echo "⚠️ No previous state found, loading all seeds..."
+            dbt seed --target ${{ matrix.dbt-target }}
+          fi
+        env:
+          DBT_HOST: localhost
+          DBT_USER: postgres
+          DBT_PASSWORD: postgres
+          DBT_DATABASE: ecommerce
+          DBT_SCHEMA: "pr_${{ github.event.pull_request.number || 'main' }}_analytics"
+          
+      - name: Load all seed data (main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: dbt seed --target ${{ matrix.dbt-target }}
         env:
           DBT_HOST: localhost
