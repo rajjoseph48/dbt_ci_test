@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: "Customer dimension table with aggregated metrics"
+    columns:
+      - name: customer_id
+        description: "Unique identifier for customers"
+        tests:
+          - unique
+          - not_null
+      - name: total_revenue
+        description: "Total revenue from completed orders"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: completed_orders
+        description: "Number of completed orders"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+
+  - name: fct_orders
+    description: "Order fact table with enriched data"
+    columns:
+      - name: order_id
+        description: "Unique identifier for orders"
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: "Foreign key to dim_customers"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_category
+        description: "Categorized order status"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['success', 'in_progress', 'failed', 'unknown']
