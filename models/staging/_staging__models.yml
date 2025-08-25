@@ -1,0 +1,85 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: "Staging table for customer data with standardized formats"
+    columns:
+      - name: customer_id
+        description: "Unique identifier for each customer"
+        tests:
+          - not_null
+          - unique
+      - name: full_name
+        description: "Customer's full name"
+        tests:
+          - not_null
+      - name: email_lower
+        description: "Customer email address in lowercase"
+        tests:
+          - not_null
+      - name: registration_date
+        description: "Date when customer registered"
+        tests:
+          - not_null
+
+  - name: stg_orders
+    description: "Staging table for order data with cleaned status values"
+    columns:
+      - name: order_id
+        description: "Unique identifier for each order"
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: "Foreign key to customers table"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: order_date
+        description: "Date when order was placed"
+        tests:
+          - not_null
+      - name: order_status
+        description: "Current status of the order"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['pending', 'completed', 'cancelled']
+      - name: total_amount
+        description: "Total monetary value of the order"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+
+  - name: stg_locations
+    description: "Staging table for warehouse location data"
+    columns:
+      - name: location_id
+        description: "Unique identifier for each location"
+        tests:
+          - not_null
+          - unique
+      - name: location_name
+        description: "Name of the warehouse location"
+        tests:
+          - not_null
+      - name: warehouse_type
+        description: "Type of warehouse facility"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['distribution', 'fulfillment', 'storage']
+      - name: is_active
+        description: "Whether the location is currently active"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]

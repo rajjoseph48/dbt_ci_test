@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: int_customer_orders
+    description: "Intermediate table joining customer and order data for analysis"
+    columns:
+      - name: order_id
+        description: "Unique identifier for each order"
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: "Unique identifier for each customer"
+        tests:
+          - not_null
+      - name: full_name
+        description: "Customer's full name"
+        tests:
+          - not_null
+      - name: email_lower
+        description: "Customer email in lowercase"
+        tests:
+          - not_null
+      - name: order_date
+        description: "Date when order was placed"
+        tests:
+          - not_null
+      - name: order_status
+        description: "Current status of the order"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['pending', 'completed', 'cancelled']
+      - name: total_amount
+        description: "Total monetary value of the order"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: is_completed
+        description: "Binary flag indicating if order is completed"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
