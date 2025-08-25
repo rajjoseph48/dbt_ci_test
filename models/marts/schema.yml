@@ -14,15 +14,17 @@ models:
         tests:
           - not_null
           - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
+              arguments:
+                min_value: 0
+                inclusive: true
       - name: completed_orders
         description: "Number of completed orders"
         tests:
           - not_null
           - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
+              arguments:
+                min_value: 0
+                inclusive: true
 
   - name: fct_orders
     description: "Order fact table with enriched data"
@@ -37,11 +39,13 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('dim_customers')
-              field: customer_id
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
       - name: order_category
         description: "Categorized order status"
         tests:
           - not_null
           - accepted_values:
-              values: ['success', 'in_progress', 'failed', 'unknown']
+              arguments:
+                values: ['success', 'in_progress', 'failed', 'unknown']

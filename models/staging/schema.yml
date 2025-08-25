@@ -32,12 +32,14 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('stg_customers')
-              field: customer_id
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
       - name: total_amount
         description: "Order total amount"
         tests:
           - not_null
           - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
+              arguments:
+                min_value: 0
+                inclusive: true
