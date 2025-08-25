@@ -104,12 +104,33 @@ jobs:
             echo "🌱 Checking for new or modified seed files..."
             dbt ls --select state:modified --state ./state/target/ --resource-type seed 2>&1 | tee dbt_modified_seeds.log
             
-            if [ -s dbt_modified_seeds.log ]; then
-              echo "📦 Found modified seeds, loading selectively:"
-              cat dbt_modified_seeds.log
-              dbt seed --target ${{ matrix.dbt-target }} --select state:modified --state ./state/target/ 2>&1 | tee dbt_seed_selective.log
+            echo "🔍 Checking for models that might need seed dependencies..."
+            dbt ls --select +state:modified+ --state ./state/target/ --resource-type model 2>&1 | tee dbt_modified_models_with_deps.log
+            
+            # Check if any of the models to be built depend on seeds
+            needs_seeds=false
+            while IFS= read -r model; do
+              if [ -n "$model" ]; then
+                # Check if this model has seed dependencies
+                seed_deps=$(dbt ls --select +$model --resource-type seed 2>/dev/null || true)
+                if [ -n "$seed_deps" ]; then
+                  echo "📦 Model $model depends on seeds: $seed_deps"
+                  needs_seeds=true
+                fi
+              fi
+            done < dbt_modified_models_with_deps.log
+            
+            if [ -s dbt_modified_seeds.log ] || [ "$needs_seeds" = true ]; then
+              if [ -s dbt_modified_seeds.log ]; then
+                echo "📦 Loading modified seeds:"
+                cat dbt_modified_seeds.log
+              fi
+              if [ "$needs_seeds" = true ]; then
+                echo "📦 Loading seeds needed by modified models"
+              fi
+              dbt seed --target ${{ matrix.dbt-target }} 2>&1 | tee dbt_seed_smart.log
             else
-              echo "✅ No seed changes detected, using existing seed data"
+              echo "✅ No seed changes or dependencies detected"
             fi
           else
             echo "⚠️ No previous state found, loading all seeds..."
