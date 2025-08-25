@@ -102,20 +102,28 @@ jobs:
         run: |
           if [ -d "./state/target" ]; then
             echo "🌱 Checking for new or modified seed files..."
-            dbt ls --select state:modified --state ./state/target/ --resource-type seed 2>&1 | tee dbt_modified_seeds.log
+            dbt ls --select state:modified --state ./state/target/ --resource-type seed --quiet 2>/dev/null | tee dbt_modified_seeds.log || echo "No modified seeds found"
             
             echo "🔍 Checking for models that might need seed dependencies..."
-            dbt ls --select +state:modified+ --state ./state/target/ --resource-type model 2>&1 | tee dbt_modified_models_with_deps.log
+            dbt ls --select +state:modified+ --state ./state/target/ --resource-type model --quiet 2>/dev/null | tee dbt_modified_models_with_deps.log || echo "No modified models found"
             
             # Check if any of the models to be built depend on seeds
             needs_seeds=false
+            required_seeds=""
             while IFS= read -r model; do
-              if [ -n "$model" ]; then
+              # Skip empty lines and lines that don't look like model names
+              if [ -n "$model" ] && [[ "$model" =~ ^[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+$ ]]; then
                 # Check if this model has seed dependencies
-                seed_deps=$(dbt ls --select +$model --resource-type seed 2>/dev/null || true)
+                seed_deps=$(dbt ls --select +$model --resource-type seed --quiet 2>/dev/null || true)
                 if [ -n "$seed_deps" ]; then
                   echo "📦 Model $model depends on seeds: $seed_deps"
                   needs_seeds=true
+                  # Collect unique seed names
+                  for seed in $seed_deps; do
+                    if [[ ! "$required_seeds" =~ "$seed" ]]; then
+                      required_seeds="$required_seeds $seed"
+                    fi
+                  done
                 fi
               fi
             done < dbt_modified_models_with_deps.log
@@ -124,11 +132,20 @@ jobs:
               if [ -s dbt_modified_seeds.log ]; then
                 echo "📦 Loading modified seeds:"
                 # cat dbt_modified_seeds.log
+                # Run only the modified seeds
+                modified_seeds=$(cat dbt_modified_seeds.log | tr '\n' ' ')
+                if [ -n "$modified_seeds" ]; then
+                  dbt seed --target ${{ matrix.dbt-target }} --select $modified_seeds 2>&1 | tee dbt_seed_modified.log
+                fi
               fi
-              if [ "$needs_seeds" = true ]; then
-                echo "📦 Loading seeds needed by modified models"
+              if [ "$needs_seeds" = true ] && [ -n "$required_seeds" ]; then
+                echo "📦 Loading seeds needed by modified models: $required_seeds"
+                # Run only the required seeds (remove duplicates and extra spaces)
+                unique_seeds=$(echo $required_seeds | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+                if [ -n "$unique_seeds" ]; then
+                  dbt seed --target ${{ matrix.dbt-target }} --select $unique_seeds 2>&1 | tee dbt_seed_dependencies.log
+                fi
               fi
-              dbt seed --target ${{ matrix.dbt-target }} 2>&1 | tee dbt_seed_smart.log
             else
               echo "✅ No seed changes or dependencies detected"
             fi
